@@ -50,6 +50,11 @@ The app can be deployed on [Render](https://render.com) by following these steps
    - Build Command: `pip install -r requirements.txt`
    - Start Command: `streamlit run app.py`
    - Select a Python 3 environment
+4. For data persistence, add a disk:
+   - Mount path: `/data` 
+   - Size: 1GB (minimum size, can be increased later)
+
+The app is configured to automatically detect and use the mounted disk path on Render for data storage, while still working correctly on your local machine.
 
 ## Data Structure
 
@@ -74,4 +79,33 @@ The application uses a CSV file (Tracker.csv) with the following columns:
    - On desktop, fill out the form and click "Save All"
    - On mobile, update individual cards and click "Save" on each card
 3. Use the date selector to view or update past entries
-4. The "Recent Activity" section shows your 5 most recent entries 
+4. The "Recent Activity" section shows your 5 most recent entries
+
+## Deployment Options
+
+### Streamlit Community Cloud
+You can deploy this app on Streamlit Community Cloud, but be aware that file-based storage (CSV) will not persist between app restarts. Data entered will be lost when the app restarts.
+
+### Render
+The repository includes configuration for deploying on Render with persistent storage:
+- The `render.yaml` file configures a 1GB persistent disk mounted at `/data`
+- The app is set up to automatically store data in this persistent location
+- This ensures your data persists between app restarts and deployments
+
+For deployment:
+1. On Render dashboard, create a new Web Service from your repository
+2. Use the Blueprint configuration (which will use our render.yaml settings)
+3. Select a paid plan to enable persistent disk storage
+4. No additional configuration is needed - the app will handle the storage path automatically
+
+### Alternative Solutions
+For better data persistence in cloud environments:
+1. Use a database backend (SQLite, PostgreSQL, etc.)
+2. Integrate with cloud storage (AWS S3, Google Cloud Storage, etc.)
+3. Use GitHub as a data store (requires additional implementation)
+
+## Usage
+
+1. Select the date
+2. Enter your daily metrics
+3. Click "Save" to record your data 

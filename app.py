@@ -12,11 +12,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Define data directory - use /data on Render, or current directory locally
+DATA_DIR = os.environ.get('DATA_DIR', '.')
+TRACKER_FILE = os.path.join(DATA_DIR, 'Tracker.csv')
+
+# Ensure the data directory exists
+os.makedirs(DATA_DIR, exist_ok=True)
+
 # Function to load data
 @st.cache_data(ttl=10, show_spinner=False)  # Cache data for 10 seconds only and hide spinner
 def load_data():
-    if os.path.exists('Tracker.csv'):
-        df = pd.read_csv('Tracker.csv')
+    if os.path.exists(TRACKER_FILE):
+        df = pd.read_csv(TRACKER_FILE)
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
         return df
@@ -28,7 +35,7 @@ def load_data():
 
 # Function to save data
 def save_data(df):
-    df.to_csv('Tracker.csv', index=False)
+    df.to_csv(TRACKER_FILE, index=False)
     # Invalidate the cache to force reload
     load_data.clear()
     return True
@@ -264,5 +271,16 @@ if not df.empty and 'Date' in df.columns:
     
     recent_df = df.sort_values(by='Date', ascending=False).head(5)
     st.dataframe(recent_df, use_container_width=True)
+    
+    # Add export button for the full CSV file
+    if os.path.exists(TRACKER_FILE):
+        with open(TRACKER_FILE, 'r') as f:
+            csv_contents = f.read()
+        st.download_button(
+            label="Export Full CSV Data",
+            data=csv_contents,
+            file_name="Tracker.csv",
+            mime="text/csv"
+        )
 else:
     st.info("No recent activity data available.") 

@@ -4,7 +4,14 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py
+    # Configure persistent disk storage on Render
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
     envVars:
+      - key: DATA_DIR
+        value: /data
       - key: PYTHON_VERSION
         value: 3.9.0
       - key: STREAMLIT_SERVER_PORT
