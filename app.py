@@ -33,9 +33,6 @@ DATA_DIR = os.environ.get('DATA_DIR', '/data' if is_render else '.')
 DATA_FOLDER = os.path.join(DATA_DIR, 'data')
 TRACKER_FILE = os.path.join(DATA_FOLDER, 'Tracker.csv')
 
-# Define a file for tracking which fields have been explicitly submitted
-FIELDS_SUBMITTED_FILE = os.path.join(DATA_FOLDER, 'submitted_fields.json')
-
 logger.info(f"Running on Render: {is_render}")
 logger.info(f"Using DATA_DIR: {DATA_DIR}")
 logger.info(f"Using DATA_FOLDER: {DATA_FOLDER}")
@@ -120,57 +117,6 @@ def load_data():
         logger.info(f"Creating new DataFrame with columns: {columns}")
         return pd.DataFrame(columns=columns)
 
-# Function to load submitted fields data
-def load_submitted_fields():
-    logger.info(f"Loading submitted fields data from {FIELDS_SUBMITTED_FILE}")
-    if os.path.exists(FIELDS_SUBMITTED_FILE):
-        try:
-            import json
-            with open(FIELDS_SUBMITTED_FILE, 'r') as f:
-                data = json.load(f)
-            logger.info(f"Successfully loaded submitted fields data: {data}")
-            return data
-        except Exception as e:
-            logger.error(f"Error loading submitted fields data: {e}")
-            return {}
-    else:
-        logger.info(f"Submitted fields file does not exist, creating empty data")
-        return {}
-
-# Function to save submitted fields data
-def save_submitted_fields(data):
-    logger.info(f"Saving submitted fields data to {FIELDS_SUBMITTED_FILE}")
-    try:
-        import json
-        os.makedirs(os.path.dirname(FIELDS_SUBMITTED_FILE), exist_ok=True)
-        with open(FIELDS_SUBMITTED_FILE, 'w') as f:
-            json.dump(data, f)
-        logger.info(f"Successfully saved submitted fields data")
-        return True
-    except Exception as e:
-        logger.error(f"Error saving submitted fields data: {e}")
-        return False
-
-# Initialize or load submitted fields data
-if 'submitted_fields' not in st.session_state:
-    st.session_state.submitted_fields = load_submitted_fields()
-
-# Function to check if a field has been submitted for a specific date
-def is_field_submitted(date, field):
-    if date not in st.session_state.submitted_fields:
-        return False
-    return field in st.session_state.submitted_fields[date]
-
-# Function to mark a field as submitted for a specific date
-def mark_field_submitted(date, field):
-    if date not in st.session_state.submitted_fields:
-        st.session_state.submitted_fields[date] = []
-    
-    if field not in st.session_state.submitted_fields[date]:
-        st.session_state.submitted_fields[date].append(field)
-    
-    save_submitted_fields(st.session_state.submitted_fields)
-
 # Function to save data
 def save_data(df):
     logger.info(f"Attempting to save data to {TRACKER_FILE}")
@@ -227,12 +173,34 @@ if 'original_values' not in st.session_state:
 if 'just_saved' not in st.session_state:
     st.session_state.just_saved = False
 
-# Create a dedicated session state for tracking form values
-if 'previous_form_values' not in st.session_state:
-    st.session_state.previous_form_values = {}
-
-# Main Form View
-st.markdown('<div class="main-form">', unsafe_allow_html=True)
+# Custom CSS for styling
+st.markdown("""
+<style>
+    .main-form {
+        display: flex;
+        flex-direction: column;
+    }
+    .data-indicator {
+        background-color: #4CAF50;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        margin-left: 10px;
+    }
+    .stButton > button {
+        width: 100%;
+    }
+    /* Make form responsive on all devices */
+    @media screen and (max-width: 768px) {
+        .st-emotion-cache-16txtl3 { /* Target Streamlit column containers */
+            flex: 0 0 100% !important;
+            width: 100% !important;
+            margin-bottom: 10px;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Load data
 logger.info("Loading initial data")
@@ -285,73 +253,8 @@ categories = {
     'Vibe': {'type': 'slider', 'min': 1, 'max': 10}
 }
 
-# Function to check if a field has been submitted and get appropriate CSS class
-def get_field_status(date, field, field_type, value):
-    # Check if the field has been explicitly submitted
-    submitted = is_field_submitted(date, field)
-    
-    if not submitted:
-        return False, ""
-    
-    if field_type == 'integer':
-        css_class = "filled-field-integer"
-    elif field_type == 'enum':
-        if value == 'good':
-            css_class = "filled-field-enum-good"
-        elif value == 'neutral':
-            css_class = "filled-field-enum-neutral"
-        else:  # 'bad'
-            css_class = "filled-field-integer"  # Use the same styling as integers for consistency
-    elif field_type == 'slider':
-        css_class = "filled-field-slider"
-    else:
-        css_class = ""
-    
-    return submitted, css_class
-
 # Main Form View
 st.markdown('<div class="main-form">', unsafe_allow_html=True)
-
-# Add completion indicators if data exists for this date
-if has_data_for_date:
-    st.write("### Today's Progress")
-    
-    # Start the completion indicator container
-    st.markdown('<div class="completion-indicator">', unsafe_allow_html=True)
-    
-    # For each category, add a pill indicating completion status
-    for category, props in categories.items():
-        field_value = existing_data[category]
-        field_submitted = is_field_submitted(selected_date_str, category)
-        
-        if field_submitted:
-            if props['type'] == 'enum':
-                if field_value == 'good':
-                    pill_class = "indicator-filled-good"
-                    display_text = f"{category}: Good"
-                elif field_value == 'neutral':
-                    pill_class = "indicator-filled-neutral"
-                    display_text = f"{category}: Neutral"
-                else:  # bad
-                    pill_class = "indicator-filled-number"
-                    display_text = f"{category}: Bad"
-            elif props['type'] == 'integer':
-                pill_class = "indicator-filled-number"
-                display_text = f"{category}: {int(field_value) if pd.notna(field_value) else 0} {props['unit']}"
-            elif props['type'] == 'slider':
-                pill_class = "indicator-filled-number"
-                display_text = f"{category}: {int(field_value) if pd.notna(field_value) else 1}/10"
-            else:
-                pill_class = "indicator-filled-good"
-                display_text = f"{category}: Done"
-        else:
-            pill_class = "indicator-unfilled"
-            display_text = f"{category}: Not Set"
-        
-        st.markdown(f'<span class="indicator-pill {pill_class}">{display_text}</span>', unsafe_allow_html=True)
-    
-    # Close the completion indicator container
-    st.markdown('</div>', unsafe_allow_html=True)
 
 form = st.form("data_form", clear_on_submit=False)
 
@@ -368,15 +271,6 @@ with form:
 
     for category, props in categories.items():
         with cols[col_idx]:
-            # Check if the field has been submitted
-            field_submitted = is_field_submitted(selected_date_str, category)
-            field_value = existing_data[category] if has_data_for_date else None
-            field_submitted, css_class = get_field_status(selected_date_str, category, props['type'], field_value)
-            
-            # Add a class wrapper for submitted fields
-            if field_submitted and css_class:
-                st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
-            
             if props['type'] == 'integer':
                 default_val = int(existing_data[category]) if existing_data[category] and pd.notna(existing_data[category]) else 0
                 new_data[category] = st.number_input(
@@ -406,10 +300,6 @@ with form:
                     value=default_val,
                     key=f"form_{category}"
                 )
-            
-            # Close the wrapper div for submitted fields
-            if field_submitted and css_class:
-                st.markdown('</div>', unsafe_allow_html=True)
         
         col_idx = (col_idx + 1) % num_cols
 
@@ -418,33 +308,6 @@ with form:
 
     if submit_button:
         logger.info(f"Save button clicked for date: {selected_date_str}")
-        
-        # Save form values to track which fields were touched
-        if selected_date_str not in st.session_state.previous_form_values:
-            # First time for this date, store all values
-            st.session_state.previous_form_values[selected_date_str] = {}
-            for category in categories.keys():
-                st.session_state.previous_form_values[selected_date_str][category] = new_data.get(category)
-                # Mark all fields as submitted for a new date entry
-                if not has_data_for_date:
-                    mark_field_submitted(selected_date_str, category)
-                    logger.info(f"New date entry: Marking field '{category}' as submitted")
-        else:
-            # Compare current values with previous to see what changed
-            prev_values = st.session_state.previous_form_values[selected_date_str]
-            for category in categories.keys():
-                prev_value = prev_values.get(category)
-                new_value = new_data.get(category)
-                # Check if value changed
-                if prev_value != new_value:
-                    logger.info(f"Value changed for '{category}': {prev_value} -> {new_value}")
-                    mark_field_submitted(selected_date_str, category)
-                    logger.info(f"Marking changed field '{category}' as submitted")
-            
-            # Update the stored values for next comparison
-            for category in categories.keys():
-                st.session_state.previous_form_values[selected_date_str][category] = new_data.get(category)
-                
         # Find changed fields by comparing with original values
         changed_fields = []
         
@@ -477,11 +340,11 @@ with form:
                         original_value = 0
                     logger.info(f"  Converted to integer for comparison: {original_value}")
                 
-                # Mark as changed if value changed
+                # Check if value has changed
                 if new_value != original_value and not pd.isna(new_value):
                     changed_fields.append(category)
                     logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
-                    
+            
             # Update only the changed fields
             if changed_fields:
                 logger.info(f"Fields changed: {changed_fields}")
@@ -521,12 +384,6 @@ with form:
             logger.info("Saving DataFrame with new row")
             save_success = save_data(df)
             logger.info(f"Save result: {'Success' if save_success else 'Failed'}")
-            
-            # Mark all fields with non-default values as submitted
-            for category, value in new_data.items():
-                if category != 'Date':  # Skip the date field
-                    mark_field_submitted(selected_date_str, category)
-                    logger.info(f"Marked field '{category}' as submitted for date {selected_date_str}")
             
             # Store the new values as original values
             st.session_state.original_values[selected_date_str] = new_data.copy()
