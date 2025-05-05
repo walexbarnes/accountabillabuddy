@@ -227,116 +227,12 @@ if 'original_values' not in st.session_state:
 if 'just_saved' not in st.session_state:
     st.session_state.just_saved = False
 
-# Create a dedicated session state for changed fields
-if 'explicit_changes' not in st.session_state:
-    st.session_state.explicit_changes = set()
+# Create a dedicated session state for tracking form values
+if 'previous_form_values' not in st.session_state:
+    st.session_state.previous_form_values = {}
 
-# Callback to track when a field is explicitly changed by the user
-def create_callback(field):
-    def callback():
-        st.session_state.explicit_changes.add(field)
-        logger.info(f"Field explicitly changed by user: {field}")
-    return callback
-
-# Custom CSS for styling
-st.markdown("""
-<style>
-    .main-form {
-        display: flex;
-        flex-direction: column;
-    }
-    .data-indicator {
-        background-color: #4CAF50;
-        color: white;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.8em;
-        margin-left: 10px;
-    }
-    .stButton > button {
-        width: 100%;
-    }
-    /* Custom styling for filled fields */
-    .filled-field-integer > div > div > div {
-        background-color: rgba(76, 175, 80, 0.2) !important;
-        border-left: 3px solid #4CAF50 !important;
-        padding-left: 8px !important;
-    }
-    .filled-field-integer label {
-        color: #2E7D32 !important;
-        font-weight: bold !important;
-    }
-    .filled-field-enum-good > div > div > div {
-        background-color: rgba(76, 175, 80, 0.2) !important;
-        border-left: 3px solid #4CAF50 !important;
-        padding-left: 8px !important;
-    }
-    .filled-field-enum-good label {
-        color: #2E7D32 !important;
-        font-weight: bold !important;
-    }
-    .filled-field-enum-neutral > div > div > div {
-        background-color: rgba(255, 193, 7, 0.2) !important;
-        border-left: 3px solid #FFC107 !important;
-        padding-left: 8px !important;
-    }
-    .filled-field-enum-neutral label {
-        color: #FF8F00 !important;
-        font-weight: bold !important;
-    }
-    .filled-field-slider > div > div > div {
-        background-color: rgba(33, 150, 243, 0.2) !important;
-        border-left: 3px solid #2196F3 !important;
-        padding-left: 8px !important;
-    }
-    .filled-field-slider label {
-        color: #1976D2 !important;
-        font-weight: bold !important;
-    }
-    /* Completion indicator pills */
-    .completion-indicator {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 15px;
-    }
-    .indicator-pill {
-        padding: 4px 10px;
-        border-radius: 16px;
-        font-size: 0.85em;
-        font-weight: 500;
-        white-space: nowrap;
-    }
-    .indicator-unfilled {
-        background-color: #f5f5f5;
-        color: #757575;
-        border: 1px solid #e0e0e0;
-    }
-    .indicator-filled-good {
-        background-color: rgba(76, 175, 80, 0.2);
-        color: #2E7D32;
-        border: 1px solid #4CAF50;
-    }
-    .indicator-filled-neutral {
-        background-color: rgba(255, 193, 7, 0.2);
-        color: #FF8F00;
-        border: 1px solid #FFC107;
-    }
-    .indicator-filled-number {
-        background-color: rgba(33, 150, 243, 0.2);
-        color: #1976D2;
-        border: 1px solid #2196F3;
-    }
-    /* Make form responsive on all devices */
-    @media screen and (max-width: 768px) {
-        .st-emotion-cache-16txtl3 { /* Target Streamlit column containers */
-            flex: 0 0 100% !important;
-            width: 100% !important;
-            margin-bottom: 10px;
-        }
-    }
-</style>
-""", unsafe_allow_html=True)
+# Main Form View
+st.markdown('<div class="main-form">', unsafe_allow_html=True)
 
 # Load data
 logger.info("Loading initial data")
@@ -488,8 +384,7 @@ with form:
                     min_value=0, 
                     value=default_val,
                     step=1,
-                    key=f"form_{category}",
-                    on_change=create_callback(category)
+                    key=f"form_{category}"
                 )
             
             elif props['type'] == 'enum':
@@ -499,8 +394,7 @@ with form:
                     category, 
                     options=props['values'],
                     index=default_idx,
-                    key=f"form_{category}",
-                    on_change=create_callback(category)
+                    key=f"form_{category}"
                 )
             
             elif props['type'] == 'slider':
@@ -510,8 +404,7 @@ with form:
                     min_value=props['min'], 
                     max_value=props['max'],
                     value=default_val,
-                    key=f"form_{category}",
-                    on_change=create_callback(category)
+                    key=f"form_{category}"
                 )
             
             # Close the wrapper div for submitted fields
@@ -525,8 +418,33 @@ with form:
 
     if submit_button:
         logger.info(f"Save button clicked for date: {selected_date_str}")
-        logger.info(f"Explicitly changed fields: {st.session_state.explicit_changes}")
         
+        # Save form values to track which fields were touched
+        if selected_date_str not in st.session_state.previous_form_values:
+            # First time for this date, store all values
+            st.session_state.previous_form_values[selected_date_str] = {}
+            for category in categories.keys():
+                st.session_state.previous_form_values[selected_date_str][category] = new_data.get(category)
+                # Mark all fields as submitted for a new date entry
+                if not has_data_for_date:
+                    mark_field_submitted(selected_date_str, category)
+                    logger.info(f"New date entry: Marking field '{category}' as submitted")
+        else:
+            # Compare current values with previous to see what changed
+            prev_values = st.session_state.previous_form_values[selected_date_str]
+            for category in categories.keys():
+                prev_value = prev_values.get(category)
+                new_value = new_data.get(category)
+                # Check if value changed
+                if prev_value != new_value:
+                    logger.info(f"Value changed for '{category}': {prev_value} -> {new_value}")
+                    mark_field_submitted(selected_date_str, category)
+                    logger.info(f"Marking changed field '{category}' as submitted")
+            
+            # Update the stored values for next comparison
+            for category in categories.keys():
+                st.session_state.previous_form_values[selected_date_str][category] = new_data.get(category)
+                
         # Find changed fields by comparing with original values
         changed_fields = []
         
@@ -540,9 +458,6 @@ with form:
                 original_value = original.get(category)
                 new_value = new_data.get(category)
                 logger.info(f"Comparing '{category}': original={original_value}, new={new_value}")
-                
-                # Check if the field was explicitly changed by the user interaction
-                explicitly_changed = category in st.session_state.explicit_changes
                 
                 # For empty or NaN values in original, convert to appropriate default
                 if not original_value or pd.isna(original_value):
@@ -562,19 +477,11 @@ with form:
                         original_value = 0
                     logger.info(f"  Converted to integer for comparison: {original_value}")
                 
-                # Mark as changed if either the value changed or it was explicitly interacted with
-                if (new_value != original_value and not pd.isna(new_value)) or explicitly_changed:
+                # Mark as changed if value changed
+                if new_value != original_value and not pd.isna(new_value):
                     changed_fields.append(category)
+                    logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
                     
-                    if explicitly_changed:
-                        logger.info(f"  Field '{category}' was explicitly changed by user interaction")
-                    else:
-                        logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
-                    
-                    # Mark this field as submitted
-                    mark_field_submitted(selected_date_str, category)
-                    logger.info(f"  Marked field '{category}' as submitted for date {selected_date_str}")
-            
             # Update only the changed fields
             if changed_fields:
                 logger.info(f"Fields changed: {changed_fields}")
@@ -637,9 +544,6 @@ with form:
         df = load_data()
         has_data_for_date = data_exists_for_date(df, selected_date_str)
         logger.info(f"Data reloaded, has_data_for_date: {has_data_for_date}")
-
-        # Clear the explicit changes tracking after saving
-        st.session_state.explicit_changes = set()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
