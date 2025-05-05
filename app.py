@@ -26,11 +26,19 @@ st.set_page_config(
 )
 
 # Define data directory - use /data on Render, or current directory locally
-DATA_DIR = os.environ.get('DATA_DIR', '.')
+is_render = os.environ.get('RENDER', 'false').lower() == 'true'
+DATA_DIR = os.environ.get('DATA_DIR', '/data' if is_render else '.')
 TRACKER_FILE = os.path.join(DATA_DIR, 'Tracker.csv')
-logger.info(f"Environment variables: {dict(os.environ)}")
+
+logger.info(f"Running on Render: {is_render}")
 logger.info(f"Using DATA_DIR: {DATA_DIR}")
 logger.info(f"Using TRACKER_FILE path: {TRACKER_FILE}")
+
+# Check for disk configuration issues
+if is_render and DATA_DIR == '.':
+    logger.warning("WARNING: Running on Render but DATA_DIR is set to current directory!")
+    logger.warning("This means disk persistence may not be working correctly.")
+    logger.warning("Check that you've added the DATA_DIR environment variable and configured the disk in Render.")
 
 # Ensure the data directory exists
 logger.info(f"Checking if data directory exists: {DATA_DIR}")
@@ -395,12 +403,35 @@ else:
 # Add diagnostic section in an expander at the bottom
 logger.info("Creating diagnostic section")
 with st.expander("System Diagnostics", expanded=False):
+    st.write("### Disk Configuration Status")
+    if is_render:
+        disk_status = "⚠️ NOT CONFIGURED" if DATA_DIR == '.' else "✅ CONFIGURED"
+        st.warning(f"Render Disk Status: {disk_status}")
+        if DATA_DIR == '.':
+            st.error("""
+            **Your disk is not properly configured on Render.**
+            
+            To fix this:
+            1. Go to your Render dashboard
+            2. Select your web service
+            3. Go to the "Disks" tab
+            4. Click "Add Disk"
+            5. Set mount path to "/data"
+            6. Set size to at least 1GB
+            7. Go to the "Environment" tab
+            8. Add environment variable: DATA_DIR=/data
+            9. Restart your service
+            """)
+        else:
+            st.success("Disk is properly configured for persistence on Render.")
+    
     st.write("### File System Information")
     st.code(f"""
 DATA_DIR: {DATA_DIR}
 TRACKER_FILE: {TRACKER_FILE}
 DATA_DIR exists: {os.path.exists(DATA_DIR)}
 TRACKER_FILE exists: {os.path.exists(TRACKER_FILE)}
+Running on Render: {is_render}
     """)
     
     if os.path.exists(TRACKER_FILE):
@@ -429,8 +460,12 @@ Created: {datetime.fromtimestamp(file_stats.st_ctime)}
     # Environment variables
     st.write("### Environment Variables")
     # Filter to only show relevant variables, avoiding sensitive info
-    safe_vars = {k: v for k, v in os.environ.items() 
+    env_vars = dict(os.environ)
+    safe_vars = {k: v for k, v in env_vars.items() 
                 if k.startswith(('ST_', 'PYTHON', 'DATA_', 'PATH', 'RENDER', 'PORT'))}
+    # Add a special note for missing DATA_DIR
+    if is_render and 'DATA_DIR' not in env_vars:
+        st.error("DATA_DIR environment variable is not set!")
     st.json(safe_vars)
     
     # System info

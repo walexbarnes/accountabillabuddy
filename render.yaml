@@ -5,11 +5,15 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py
     # Configure persistent disk storage on Render
+    # IMPORTANT: When setting up in Render UI, you MUST:
+    # 1. Add a disk with mount path: /data
+    # 2. Add environment variable: DATA_DIR=/data
     disk:
       name: data
       mountPath: /data
       sizeGB: 1
     envVars:
+      # This is required for persistence - the app checks for this variable
       - key: DATA_DIR
         value: /data
       - key: PYTHON_VERSION
