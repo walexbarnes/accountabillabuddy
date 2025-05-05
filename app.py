@@ -3,8 +3,21 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import os
+import logging
+import sys
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger("Accountabillabuddy")
 
 # App title and configuration
+logger.info("Starting Accountabillabuddy app")
 st.set_page_config(
     page_title="Daily Activity Tracker",
     page_icon="📊",
@@ -15,30 +28,87 @@ st.set_page_config(
 # Define data directory - use /data on Render, or current directory locally
 DATA_DIR = os.environ.get('DATA_DIR', '.')
 TRACKER_FILE = os.path.join(DATA_DIR, 'Tracker.csv')
+logger.info(f"Environment variables: {dict(os.environ)}")
+logger.info(f"Using DATA_DIR: {DATA_DIR}")
+logger.info(f"Using TRACKER_FILE path: {TRACKER_FILE}")
 
 # Ensure the data directory exists
-os.makedirs(DATA_DIR, exist_ok=True)
+logger.info(f"Checking if data directory exists: {DATA_DIR}")
+if not os.path.exists(DATA_DIR):
+    logger.info(f"Creating data directory: {DATA_DIR}")
+    os.makedirs(DATA_DIR, exist_ok=True)
+else:
+    logger.info(f"Data directory already exists: {DATA_DIR}")
+    
+# Log directory contents
+try:
+    dir_contents = os.listdir(DATA_DIR)
+    logger.info(f"Contents of {DATA_DIR}: {dir_contents}")
+except Exception as e:
+    logger.error(f"Error listing directory contents: {e}")
 
 # Function to load data
 @st.cache_data(ttl=10, show_spinner=False)  # Cache data for 10 seconds only and hide spinner
 def load_data():
+    logger.info(f"Attempting to load data from {TRACKER_FILE}")
     if os.path.exists(TRACKER_FILE):
-        df = pd.read_csv(TRACKER_FILE)
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
-        return df
+        logger.info(f"File exists, reading from {TRACKER_FILE}")
+        try:
+            df = pd.read_csv(TRACKER_FILE)
+            logger.info(f"Successfully loaded data with shape: {df.shape}")
+            if 'Date' in df.columns:
+                logger.info("Converting date column to proper format")
+                df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+            logger.info(f"First few rows: {df.head().to_dict()}")
+            return df
+        except Exception as e:
+            logger.error(f"Error reading CSV file: {e}")
+            return pd.DataFrame(columns=['Date', 'Meditation', 'Exercise', 'Frankie', 'Harrison', 'Madi', 
+                          'THC', 'Diet', 'Screen', 'Productive', 'Vibe'])
     else:
+        logger.info(f"File does not exist: {TRACKER_FILE}")
         # Create a new DataFrame with the correct columns if file doesn't exist
         columns = ['Date', 'Meditation', 'Exercise', 'Frankie', 'Harrison', 'Madi', 
                   'THC', 'Diet', 'Screen', 'Productive', 'Vibe']
+        logger.info(f"Creating new DataFrame with columns: {columns}")
         return pd.DataFrame(columns=columns)
 
 # Function to save data
 def save_data(df):
-    df.to_csv(TRACKER_FILE, index=False)
-    # Invalidate the cache to force reload
-    load_data.clear()
-    return True
+    logger.info(f"Attempting to save data to {TRACKER_FILE}")
+    logger.info(f"DataFrame shape: {df.shape}")
+    logger.info(f"First few rows to save: {df.head().to_dict()}")
+    
+    try:
+        # Get the directory of the file to create it if necessary
+        file_dir = os.path.dirname(TRACKER_FILE)
+        if file_dir and not os.path.exists(file_dir):
+            logger.info(f"Creating directory: {file_dir}")
+            os.makedirs(file_dir, exist_ok=True)
+        
+        # Save the DataFrame to the CSV file
+        df.to_csv(TRACKER_FILE, index=False)
+        logger.info(f"Successfully saved data to {TRACKER_FILE}")
+        
+        # Verify the file was created
+        if os.path.exists(TRACKER_FILE):
+            file_size = os.path.getsize(TRACKER_FILE)
+            logger.info(f"File saved with size: {file_size} bytes")
+            
+            # Read the first few lines to verify
+            with open(TRACKER_FILE, 'r') as f:
+                first_few_lines = [next(f) for _ in range(min(5, len(df) + 1))]
+            logger.info(f"File contents verification (first few lines): {first_few_lines}")
+        else:
+            logger.error(f"File was not created at {TRACKER_FILE}")
+        
+        # Invalidate the cache to force reload
+        load_data.clear()
+        logger.info("Cache cleared for data reload")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving data: {e}")
+        return False
 
 # Function to check if data exists for a specific date
 def data_exists_for_date(df, date_str):
@@ -89,7 +159,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Load data
+logger.info("Loading initial data")
 df = load_data()
+logger.info(f"Initial data loaded with {len(df)} rows")
 
 # Get today's date in YYYY-MM-DD format
 today = datetime.now().strftime('%Y-%m-%d')
@@ -191,14 +263,21 @@ with form:
     submit_button = st.form_submit_button("Save All")
 
     if submit_button:
+        logger.info(f"Save button clicked for date: {selected_date_str}")
         # Find changed fields by comparing with original values
         changed_fields = []
         
         if has_data_for_date:
+            logger.info(f"Updating existing data for date: {selected_date_str}")
             original = st.session_state.original_values[selected_date_str]
+            logger.info(f"Original values: {original}")
+            logger.info(f"New values: {new_data}")
+            
             for category in categories.keys():
                 original_value = original.get(category)
                 new_value = new_data.get(category)
+                logger.info(f"Comparing '{category}': original={original_value}, new={new_value}")
+                
                 # For empty or NaN values in original, convert to appropriate default
                 if not original_value or pd.isna(original_value):
                     if categories[category]['type'] == 'integer':
@@ -207,6 +286,7 @@ with form:
                         original_value = categories[category]['values'][0]
                     elif categories[category]['type'] == 'slider':
                         original_value = categories[category]['min']
+                    logger.info(f"  Converted empty/NaN original value to default: {original_value}")
                 
                 # Convert both to same type for comparison
                 if categories[category]['type'] in ['integer', 'slider']:
@@ -214,50 +294,69 @@ with form:
                         original_value = int(original_value)
                     else:
                         original_value = 0
+                    logger.info(f"  Converted to integer for comparison: {original_value}")
                 
                 # Check if value has changed
                 if new_value != original_value and not pd.isna(new_value):
                     changed_fields.append(category)
+                    logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
             
             # Update only the changed fields
             if changed_fields:
+                logger.info(f"Fields changed: {changed_fields}")
                 for category in changed_fields:
+                    logger.info(f"Updating '{category}' to {new_data[category]}")
                     df.loc[df['Date'] == selected_date_str, category] = new_data[category]
                 
                 # Save the updated DataFrame
-                save_data(df)
+                logger.info("Saving updated data")
+                save_success = save_data(df)
+                logger.info(f"Save result: {'Success' if save_success else 'Failed'}")
                 
                 # Update original values after saving
                 st.session_state.original_values[selected_date_str] = get_data_for_date(df, selected_date_str).copy()
+                logger.info(f"Updated original values in session state")
                 
                 # Show success message
                 updated_fields = ", ".join(changed_fields)
+                logger.info(f"Displaying success message for updated fields: {updated_fields}")
                 message_container.success(f"Updated fields for {selected_date_str}: {updated_fields}")
                 
                 # Set the just_saved flag
                 st.session_state.just_saved = True
             else:
                 # If no fields were changed, don't update anything
+                logger.info("No fields were changed, not saving")
                 message_container.info("No changes detected. No fields were updated.")
         else:
+            logger.info(f"Creating new entry for date: {selected_date_str}")
+            logger.info(f"New data: {new_data}")
+            
             # For new entries, add the entire row
             df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+            logger.info(f"Added new row to DataFrame, new shape: {df.shape}")
             
             # Save the updated DataFrame
-            save_data(df)
+            logger.info("Saving DataFrame with new row")
+            save_success = save_data(df)
+            logger.info(f"Save result: {'Success' if save_success else 'Failed'}")
             
             # Store the new values as original values
             st.session_state.original_values[selected_date_str] = new_data.copy()
+            logger.info(f"Updated original values in session state")
             
             # Show success message
+            logger.info(f"Displaying success message for new entry")
             message_container.success(f"New entry created for {selected_date_str}")
             
             # Set the just_saved flag
             st.session_state.just_saved = True
         
         # Reload data to ensure latest changes are visible
+        logger.info("Reloading data to refresh display")
         df = load_data()
         has_data_for_date = data_exists_for_date(df, selected_date_str)
+        logger.info(f"Data reloaded, has_data_for_date: {has_data_for_date}")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -274,13 +373,91 @@ if not df.empty and 'Date' in df.columns:
     
     # Add export button for the full CSV file
     if os.path.exists(TRACKER_FILE):
-        with open(TRACKER_FILE, 'r') as f:
-            csv_contents = f.read()
-        st.download_button(
-            label="Export Full CSV Data",
-            data=csv_contents,
-            file_name="Tracker.csv",
-            mime="text/csv"
-        )
+        logger.info(f"Creating export button for file: {TRACKER_FILE}")
+        try:
+            with open(TRACKER_FILE, 'r') as f:
+                csv_contents = f.read()
+            logger.info(f"File read successfully for export, size: {len(csv_contents)} bytes")
+            logger.info(f"File preview (first 100 chars): {csv_contents[:100]}")
+            st.download_button(
+                label="Export Full CSV Data",
+                data=csv_contents,
+                file_name="Tracker.csv",
+                mime="text/csv"
+            )
+            logger.info("Export button created successfully")
+        except Exception as e:
+            logger.error(f"Error creating export button: {e}")
+            st.error(f"Could not create export button: {e}")
 else:
-    st.info("No recent activity data available.") 
+    st.info("No recent activity data available.")
+
+# Add diagnostic section in an expander at the bottom
+logger.info("Creating diagnostic section")
+with st.expander("System Diagnostics", expanded=False):
+    st.write("### File System Information")
+    st.code(f"""
+DATA_DIR: {DATA_DIR}
+TRACKER_FILE: {TRACKER_FILE}
+DATA_DIR exists: {os.path.exists(DATA_DIR)}
+TRACKER_FILE exists: {os.path.exists(TRACKER_FILE)}
+    """)
+    
+    if os.path.exists(TRACKER_FILE):
+        file_stats = os.stat(TRACKER_FILE)
+        st.write("### Tracker File Stats")
+        st.code(f"""
+File size: {file_stats.st_size} bytes
+Last modified: {datetime.fromtimestamp(file_stats.st_mtime)}
+Created: {datetime.fromtimestamp(file_stats.st_ctime)}
+        """)
+    
+    # Show contents of DATA_DIR
+    st.write("### Contents of Data Directory")
+    try:
+        dir_contents = os.listdir(DATA_DIR)
+        for item in dir_contents:
+            item_path = os.path.join(DATA_DIR, item)
+            if os.path.isfile(item_path):
+                file_size = os.path.getsize(item_path)
+                st.code(f"{item} (File, {file_size} bytes)")
+            else:
+                st.code(f"{item} (Directory)")
+    except Exception as e:
+        st.error(f"Error listing directory: {str(e)}")
+    
+    # Environment variables
+    st.write("### Environment Variables")
+    # Filter to only show relevant variables, avoiding sensitive info
+    safe_vars = {k: v for k, v in os.environ.items() 
+                if k.startswith(('ST_', 'PYTHON', 'DATA_', 'PATH', 'RENDER', 'PORT'))}
+    st.json(safe_vars)
+    
+    # System info
+    st.write("### System Information")
+    import platform
+    system_info = {
+        "Python Version": platform.python_version(),
+        "Platform": platform.platform(),
+        "System": platform.system(),
+        "Processor": platform.processor(),
+        "Machine": platform.machine(),
+        "Working Directory": os.getcwd()
+    }
+    st.json(system_info)
+    
+    # Show first 10 lines of the CSV if it exists
+    if os.path.exists(TRACKER_FILE):
+        st.write("### CSV File Preview (First 10 lines)")
+        try:
+            with open(TRACKER_FILE, 'r') as f:
+                first_lines = [next(f) for _ in range(10) if f]
+            st.code(''.join(first_lines), language="csv")
+        except Exception as e:
+            st.error(f"Error reading file: {str(e)}")
+            
+    # Add a force refresh button
+    if st.button("Force Reload Data File"):
+        logger.info("Force reload button clicked")
+        load_data.clear()
+        st.experimental_rerun() 
