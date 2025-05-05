@@ -33,6 +33,9 @@ DATA_DIR = os.environ.get('DATA_DIR', '/data' if is_render else '.')
 DATA_FOLDER = os.path.join(DATA_DIR, 'data')
 TRACKER_FILE = os.path.join(DATA_FOLDER, 'Tracker.csv')
 
+# Define a file for tracking which fields have been explicitly submitted
+FIELDS_SUBMITTED_FILE = os.path.join(DATA_FOLDER, 'submitted_fields.json')
+
 logger.info(f"Running on Render: {is_render}")
 logger.info(f"Using DATA_DIR: {DATA_DIR}")
 logger.info(f"Using DATA_FOLDER: {DATA_FOLDER}")
@@ -117,6 +120,57 @@ def load_data():
         logger.info(f"Creating new DataFrame with columns: {columns}")
         return pd.DataFrame(columns=columns)
 
+# Function to load submitted fields data
+def load_submitted_fields():
+    logger.info(f"Loading submitted fields data from {FIELDS_SUBMITTED_FILE}")
+    if os.path.exists(FIELDS_SUBMITTED_FILE):
+        try:
+            import json
+            with open(FIELDS_SUBMITTED_FILE, 'r') as f:
+                data = json.load(f)
+            logger.info(f"Successfully loaded submitted fields data: {data}")
+            return data
+        except Exception as e:
+            logger.error(f"Error loading submitted fields data: {e}")
+            return {}
+    else:
+        logger.info(f"Submitted fields file does not exist, creating empty data")
+        return {}
+
+# Function to save submitted fields data
+def save_submitted_fields(data):
+    logger.info(f"Saving submitted fields data to {FIELDS_SUBMITTED_FILE}")
+    try:
+        import json
+        os.makedirs(os.path.dirname(FIELDS_SUBMITTED_FILE), exist_ok=True)
+        with open(FIELDS_SUBMITTED_FILE, 'w') as f:
+            json.dump(data, f)
+        logger.info(f"Successfully saved submitted fields data")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving submitted fields data: {e}")
+        return False
+
+# Initialize or load submitted fields data
+if 'submitted_fields' not in st.session_state:
+    st.session_state.submitted_fields = load_submitted_fields()
+
+# Function to check if a field has been submitted for a specific date
+def is_field_submitted(date, field):
+    if date not in st.session_state.submitted_fields:
+        return False
+    return field in st.session_state.submitted_fields[date]
+
+# Function to mark a field as submitted for a specific date
+def mark_field_submitted(date, field):
+    if date not in st.session_state.submitted_fields:
+        st.session_state.submitted_fields[date] = []
+    
+    if field not in st.session_state.submitted_fields[date]:
+        st.session_state.submitted_fields[date].append(field)
+    
+    save_submitted_fields(st.session_state.submitted_fields)
+
 # Function to save data
 def save_data(df):
     logger.info(f"Attempting to save data to {TRACKER_FILE}")
@@ -173,6 +227,17 @@ if 'original_values' not in st.session_state:
 if 'just_saved' not in st.session_state:
     st.session_state.just_saved = False
 
+# Create a dedicated session state for changed fields
+if 'explicit_changes' not in st.session_state:
+    st.session_state.explicit_changes = set()
+
+# Callback to track when a field is explicitly changed by the user
+def create_callback(field):
+    def callback():
+        st.session_state.explicit_changes.add(field)
+        logger.info(f"Field explicitly changed by user: {field}")
+    return callback
+
 # Custom CSS for styling
 st.markdown("""
 <style>
@@ -190,6 +255,77 @@ st.markdown("""
     }
     .stButton > button {
         width: 100%;
+    }
+    /* Custom styling for filled fields */
+    .filled-field-integer > div > div > div {
+        background-color: rgba(76, 175, 80, 0.2) !important;
+        border-left: 3px solid #4CAF50 !important;
+        padding-left: 8px !important;
+    }
+    .filled-field-integer label {
+        color: #2E7D32 !important;
+        font-weight: bold !important;
+    }
+    .filled-field-enum-good > div > div > div {
+        background-color: rgba(76, 175, 80, 0.2) !important;
+        border-left: 3px solid #4CAF50 !important;
+        padding-left: 8px !important;
+    }
+    .filled-field-enum-good label {
+        color: #2E7D32 !important;
+        font-weight: bold !important;
+    }
+    .filled-field-enum-neutral > div > div > div {
+        background-color: rgba(255, 193, 7, 0.2) !important;
+        border-left: 3px solid #FFC107 !important;
+        padding-left: 8px !important;
+    }
+    .filled-field-enum-neutral label {
+        color: #FF8F00 !important;
+        font-weight: bold !important;
+    }
+    .filled-field-slider > div > div > div {
+        background-color: rgba(33, 150, 243, 0.2) !important;
+        border-left: 3px solid #2196F3 !important;
+        padding-left: 8px !important;
+    }
+    .filled-field-slider label {
+        color: #1976D2 !important;
+        font-weight: bold !important;
+    }
+    /* Completion indicator pills */
+    .completion-indicator {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+    .indicator-pill {
+        padding: 4px 10px;
+        border-radius: 16px;
+        font-size: 0.85em;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .indicator-unfilled {
+        background-color: #f5f5f5;
+        color: #757575;
+        border: 1px solid #e0e0e0;
+    }
+    .indicator-filled-good {
+        background-color: rgba(76, 175, 80, 0.2);
+        color: #2E7D32;
+        border: 1px solid #4CAF50;
+    }
+    .indicator-filled-neutral {
+        background-color: rgba(255, 193, 7, 0.2);
+        color: #FF8F00;
+        border: 1px solid #FFC107;
+    }
+    .indicator-filled-number {
+        background-color: rgba(33, 150, 243, 0.2);
+        color: #1976D2;
+        border: 1px solid #2196F3;
     }
     /* Make form responsive on all devices */
     @media screen and (max-width: 768px) {
@@ -253,8 +389,73 @@ categories = {
     'Vibe': {'type': 'slider', 'min': 1, 'max': 10}
 }
 
+# Function to check if a field has been submitted and get appropriate CSS class
+def get_field_status(date, field, field_type, value):
+    # Check if the field has been explicitly submitted
+    submitted = is_field_submitted(date, field)
+    
+    if not submitted:
+        return False, ""
+    
+    if field_type == 'integer':
+        css_class = "filled-field-integer"
+    elif field_type == 'enum':
+        if value == 'good':
+            css_class = "filled-field-enum-good"
+        elif value == 'neutral':
+            css_class = "filled-field-enum-neutral"
+        else:  # 'bad'
+            css_class = "filled-field-integer"  # Use the same styling as integers for consistency
+    elif field_type == 'slider':
+        css_class = "filled-field-slider"
+    else:
+        css_class = ""
+    
+    return submitted, css_class
+
 # Main Form View
 st.markdown('<div class="main-form">', unsafe_allow_html=True)
+
+# Add completion indicators if data exists for this date
+if has_data_for_date:
+    st.write("### Today's Progress")
+    
+    # Start the completion indicator container
+    st.markdown('<div class="completion-indicator">', unsafe_allow_html=True)
+    
+    # For each category, add a pill indicating completion status
+    for category, props in categories.items():
+        field_value = existing_data[category]
+        field_submitted = is_field_submitted(selected_date_str, category)
+        
+        if field_submitted:
+            if props['type'] == 'enum':
+                if field_value == 'good':
+                    pill_class = "indicator-filled-good"
+                    display_text = f"{category}: Good"
+                elif field_value == 'neutral':
+                    pill_class = "indicator-filled-neutral"
+                    display_text = f"{category}: Neutral"
+                else:  # bad
+                    pill_class = "indicator-filled-number"
+                    display_text = f"{category}: Bad"
+            elif props['type'] == 'integer':
+                pill_class = "indicator-filled-number"
+                display_text = f"{category}: {int(field_value) if pd.notna(field_value) else 0} {props['unit']}"
+            elif props['type'] == 'slider':
+                pill_class = "indicator-filled-number"
+                display_text = f"{category}: {int(field_value) if pd.notna(field_value) else 1}/10"
+            else:
+                pill_class = "indicator-filled-good"
+                display_text = f"{category}: Done"
+        else:
+            pill_class = "indicator-unfilled"
+            display_text = f"{category}: Not Set"
+        
+        st.markdown(f'<span class="indicator-pill {pill_class}">{display_text}</span>', unsafe_allow_html=True)
+    
+    # Close the completion indicator container
+    st.markdown('</div>', unsafe_allow_html=True)
 
 form = st.form("data_form", clear_on_submit=False)
 
@@ -271,6 +472,15 @@ with form:
 
     for category, props in categories.items():
         with cols[col_idx]:
+            # Check if the field has been submitted
+            field_submitted = is_field_submitted(selected_date_str, category)
+            field_value = existing_data[category] if has_data_for_date else None
+            field_submitted, css_class = get_field_status(selected_date_str, category, props['type'], field_value)
+            
+            # Add a class wrapper for submitted fields
+            if field_submitted and css_class:
+                st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
+            
             if props['type'] == 'integer':
                 default_val = int(existing_data[category]) if existing_data[category] and pd.notna(existing_data[category]) else 0
                 new_data[category] = st.number_input(
@@ -278,7 +488,8 @@ with form:
                     min_value=0, 
                     value=default_val,
                     step=1,
-                    key=f"form_{category}"
+                    key=f"form_{category}",
+                    on_change=create_callback(category)
                 )
             
             elif props['type'] == 'enum':
@@ -288,7 +499,8 @@ with form:
                     category, 
                     options=props['values'],
                     index=default_idx,
-                    key=f"form_{category}"
+                    key=f"form_{category}",
+                    on_change=create_callback(category)
                 )
             
             elif props['type'] == 'slider':
@@ -298,8 +510,13 @@ with form:
                     min_value=props['min'], 
                     max_value=props['max'],
                     value=default_val,
-                    key=f"form_{category}"
+                    key=f"form_{category}",
+                    on_change=create_callback(category)
                 )
+            
+            # Close the wrapper div for submitted fields
+            if field_submitted and css_class:
+                st.markdown('</div>', unsafe_allow_html=True)
         
         col_idx = (col_idx + 1) % num_cols
 
@@ -308,6 +525,8 @@ with form:
 
     if submit_button:
         logger.info(f"Save button clicked for date: {selected_date_str}")
+        logger.info(f"Explicitly changed fields: {st.session_state.explicit_changes}")
+        
         # Find changed fields by comparing with original values
         changed_fields = []
         
@@ -321,6 +540,9 @@ with form:
                 original_value = original.get(category)
                 new_value = new_data.get(category)
                 logger.info(f"Comparing '{category}': original={original_value}, new={new_value}")
+                
+                # Check if the field was explicitly changed by the user interaction
+                explicitly_changed = category in st.session_state.explicit_changes
                 
                 # For empty or NaN values in original, convert to appropriate default
                 if not original_value or pd.isna(original_value):
@@ -340,10 +562,18 @@ with form:
                         original_value = 0
                     logger.info(f"  Converted to integer for comparison: {original_value}")
                 
-                # Check if value has changed
-                if new_value != original_value and not pd.isna(new_value):
+                # Mark as changed if either the value changed or it was explicitly interacted with
+                if (new_value != original_value and not pd.isna(new_value)) or explicitly_changed:
                     changed_fields.append(category)
-                    logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
+                    
+                    if explicitly_changed:
+                        logger.info(f"  Field '{category}' was explicitly changed by user interaction")
+                    else:
+                        logger.info(f"  *** Value changed for '{category}': {original_value} -> {new_value}")
+                    
+                    # Mark this field as submitted
+                    mark_field_submitted(selected_date_str, category)
+                    logger.info(f"  Marked field '{category}' as submitted for date {selected_date_str}")
             
             # Update only the changed fields
             if changed_fields:
@@ -385,6 +615,12 @@ with form:
             save_success = save_data(df)
             logger.info(f"Save result: {'Success' if save_success else 'Failed'}")
             
+            # Mark all fields with non-default values as submitted
+            for category, value in new_data.items():
+                if category != 'Date':  # Skip the date field
+                    mark_field_submitted(selected_date_str, category)
+                    logger.info(f"Marked field '{category}' as submitted for date {selected_date_str}")
+            
             # Store the new values as original values
             st.session_state.original_values[selected_date_str] = new_data.copy()
             logger.info(f"Updated original values in session state")
@@ -401,6 +637,9 @@ with form:
         df = load_data()
         has_data_for_date = data_exists_for_date(df, selected_date_str)
         logger.info(f"Data reloaded, has_data_for_date: {has_data_for_date}")
+
+        # Clear the explicit changes tracking after saving
+        st.session_state.explicit_changes = set()
 
 st.markdown('</div>', unsafe_allow_html=True)
 
