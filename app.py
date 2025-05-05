@@ -28,10 +28,14 @@ st.set_page_config(
 # Define data directory - use /data on Render, or current directory locally
 is_render = os.environ.get('RENDER', 'false').lower() == 'true'
 DATA_DIR = os.environ.get('DATA_DIR', '/data' if is_render else '.')
-TRACKER_FILE = os.path.join(DATA_DIR, 'Tracker.csv')
+
+# Create a dedicated subfolder for data files
+DATA_FOLDER = os.path.join(DATA_DIR, 'data')
+TRACKER_FILE = os.path.join(DATA_FOLDER, 'Tracker.csv')
 
 logger.info(f"Running on Render: {is_render}")
 logger.info(f"Using DATA_DIR: {DATA_DIR}")
+logger.info(f"Using DATA_FOLDER: {DATA_FOLDER}")
 logger.info(f"Using TRACKER_FILE path: {TRACKER_FILE}")
 
 # Check for disk configuration issues
@@ -40,18 +44,30 @@ if is_render and DATA_DIR == '.':
     logger.warning("This means disk persistence may not be working correctly.")
     logger.warning("Check that you've added the DATA_DIR environment variable and configured the disk in Render.")
 
-# Ensure the data directory exists
+# Ensure the data directory and folder exist
 logger.info(f"Checking if data directory exists: {DATA_DIR}")
 if not os.path.exists(DATA_DIR):
     logger.info(f"Creating data directory: {DATA_DIR}")
     os.makedirs(DATA_DIR, exist_ok=True)
 else:
     logger.info(f"Data directory already exists: {DATA_DIR}")
+
+# Ensure data subfolder exists
+logger.info(f"Checking if data subfolder exists: {DATA_FOLDER}")
+if not os.path.exists(DATA_FOLDER):
+    logger.info(f"Creating data subfolder: {DATA_FOLDER}")
+    os.makedirs(DATA_FOLDER, exist_ok=True)
+else:
+    logger.info(f"Data subfolder already exists: {DATA_FOLDER}")
     
 # Log directory contents
 try:
     dir_contents = os.listdir(DATA_DIR)
     logger.info(f"Contents of {DATA_DIR}: {dir_contents}")
+    
+    if os.path.exists(DATA_FOLDER):
+        folder_contents = os.listdir(DATA_FOLDER)
+        logger.info(f"Contents of {DATA_FOLDER}: {folder_contents}")
 except Exception as e:
     logger.error(f"Error listing directory contents: {e}")
 
@@ -59,6 +75,26 @@ except Exception as e:
 @st.cache_data(ttl=10, show_spinner=False)  # Cache data for 10 seconds only and hide spinner
 def load_data():
     logger.info(f"Attempting to load data from {TRACKER_FILE}")
+    
+    # Check for data in old location and migrate if needed
+    old_tracker_file = os.path.join(DATA_DIR, 'Tracker.csv')
+    if os.path.exists(old_tracker_file) and not os.path.exists(TRACKER_FILE):
+        logger.info(f"Found data in old location: {old_tracker_file}")
+        logger.info(f"Migrating data to new location: {TRACKER_FILE}")
+        try:
+            # Read from old location
+            old_df = pd.read_csv(old_tracker_file)
+            # Save to new location
+            old_df.to_csv(TRACKER_FILE, index=False)
+            logger.info(f"Data successfully migrated from {old_tracker_file} to {TRACKER_FILE}")
+            # Optionally, create a backup of the old file
+            backup_file = os.path.join(DATA_DIR, 'Tracker.csv.bak')
+            import shutil
+            shutil.copy2(old_tracker_file, backup_file)
+            logger.info(f"Created backup of old file at {backup_file}")
+        except Exception as e:
+            logger.error(f"Error migrating data: {e}")
+    
     if os.path.exists(TRACKER_FILE):
         logger.info(f"File exists, reading from {TRACKER_FILE}")
         try:
@@ -428,8 +464,10 @@ with st.expander("System Diagnostics", expanded=False):
     st.write("### File System Information")
     st.code(f"""
 DATA_DIR: {DATA_DIR}
+DATA_FOLDER: {DATA_FOLDER}
 TRACKER_FILE: {TRACKER_FILE}
 DATA_DIR exists: {os.path.exists(DATA_DIR)}
+DATA_FOLDER exists: {os.path.exists(DATA_FOLDER)}
 TRACKER_FILE exists: {os.path.exists(TRACKER_FILE)}
 Running on Render: {is_render}
     """)
@@ -444,7 +482,8 @@ Created: {datetime.fromtimestamp(file_stats.st_ctime)}
         """)
     
     # Show contents of DATA_DIR
-    st.write("### Contents of Data Directory")
+    st.write("### Directory Structure")
+    st.write(f"**Contents of {DATA_DIR}:**")
     try:
         dir_contents = os.listdir(DATA_DIR)
         for item in dir_contents:
@@ -454,6 +493,19 @@ Created: {datetime.fromtimestamp(file_stats.st_ctime)}
                 st.code(f"{item} (File, {file_size} bytes)")
             else:
                 st.code(f"{item} (Directory)")
+        
+        if os.path.exists(DATA_FOLDER):
+            st.write(f"**Contents of {DATA_FOLDER}:**")
+            folder_contents = os.listdir(DATA_FOLDER)
+            for item in folder_contents:
+                item_path = os.path.join(DATA_FOLDER, item)
+                if os.path.isfile(item_path):
+                    file_size = os.path.getsize(item_path)
+                    st.code(f"{item} (File, {file_size} bytes)")
+                else:
+                    st.code(f"{item} (Directory)")
+        else:
+            st.warning(f"Data folder does not exist: {DATA_FOLDER}")
     except Exception as e:
         st.error(f"Error listing directory: {str(e)}")
     
