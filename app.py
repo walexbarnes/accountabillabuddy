@@ -191,12 +191,20 @@ st.markdown("""
     .stButton > button {
         width: 100%;
     }
-    /* Make form responsive on all devices */
+    /* Ensure proper column layout on all devices */
     @media screen and (max-width: 768px) {
-        .st-emotion-cache-16txtl3 { /* Target Streamlit column containers */
-            flex: 0 0 100% !important;
-            width: 100% !important;
-            margin-bottom: 10px;
+        /* Force 3 columns layout */
+        [data-testid="column"] {
+            flex: 0 0 33.33% !important;
+            width: 33.33% !important;
+            min-width: 33.33% !important;
+        }
+        /* Make input fields and text smaller on mobile */
+        .stNumberInput input, .stSelectbox, .stSlider {
+            font-size: 14px !important;
+        }
+        [data-testid="stVerticalBlock"] {
+            gap: 0.5rem !important;
         }
     }
 </style>
@@ -264,8 +272,8 @@ with form:
     if has_data_for_date:
         st.markdown('<span class="data-indicator">Data Exists</span>', unsafe_allow_html=True)
 
-    # Create columns for the form - adjust number based on screen size
-    num_cols = 3  # Reduced from 5 for better readability on all devices
+    # Create columns for the form - always use 3 columns for better mobile layout
+    num_cols = 3  # Fixed to 3 columns for consistent layout on all devices
     cols = st.columns(num_cols)
     col_idx = 0
 
@@ -274,7 +282,7 @@ with form:
             if props['type'] == 'integer':
                 default_val = int(existing_data[category]) if existing_data[category] and pd.notna(existing_data[category]) else 0
                 new_data[category] = st.number_input(
-                    f"{category} ({props['unit']})", 
+                    f"{category} (min)" if 'unit' in props and props['unit'] == 'minutes' else f"{category}", 
                     min_value=0, 
                     value=default_val,
                     step=1,
@@ -433,118 +441,5 @@ if not df.empty and 'Date' in df.columns:
         except Exception as e:
             logger.error(f"Error creating export button: {e}")
             st.error(f"Could not create export button: {e}")
-else:
-    st.info("No recent activity data available.")
-
-# Add diagnostic section in an expander at the bottom
-logger.info("Creating diagnostic section")
-with st.expander("System Diagnostics", expanded=False):
-    st.write("### Disk Configuration Status")
-    if is_render:
-        disk_status = "⚠️ NOT CONFIGURED" if DATA_DIR == '.' else "✅ CONFIGURED"
-        st.warning(f"Render Disk Status: {disk_status}")
-        if DATA_DIR == '.':
-            st.error("""
-            **Your disk is not properly configured on Render.**
-            
-            To fix this:
-            1. Go to your Render dashboard
-            2. Select your web service
-            3. Go to the "Disks" tab
-            4. Click "Add Disk"
-            5. Set mount path to "/data"
-            6. Set size to at least 1GB
-            7. Go to the "Environment" tab
-            8. Add environment variable: DATA_DIR=/data
-            9. Restart your service
-            """)
-        else:
-            st.success("Disk is properly configured for persistence on Render.")
-    
-    st.write("### File System Information")
-    st.code(f"""
-DATA_DIR: {DATA_DIR}
-DATA_FOLDER: {DATA_FOLDER}
-TRACKER_FILE: {TRACKER_FILE}
-DATA_DIR exists: {os.path.exists(DATA_DIR)}
-DATA_FOLDER exists: {os.path.exists(DATA_FOLDER)}
-TRACKER_FILE exists: {os.path.exists(TRACKER_FILE)}
-Running on Render: {is_render}
-    """)
-    
-    if os.path.exists(TRACKER_FILE):
-        file_stats = os.stat(TRACKER_FILE)
-        st.write("### Tracker File Stats")
-        st.code(f"""
-File size: {file_stats.st_size} bytes
-Last modified: {datetime.fromtimestamp(file_stats.st_mtime)}
-Created: {datetime.fromtimestamp(file_stats.st_ctime)}
-        """)
-    
-    # Show contents of DATA_DIR
-    st.write("### Directory Structure")
-    st.write(f"**Contents of {DATA_DIR}:**")
-    try:
-        dir_contents = os.listdir(DATA_DIR)
-        for item in dir_contents:
-            item_path = os.path.join(DATA_DIR, item)
-            if os.path.isfile(item_path):
-                file_size = os.path.getsize(item_path)
-                st.code(f"{item} (File, {file_size} bytes)")
-            else:
-                st.code(f"{item} (Directory)")
-        
-        if os.path.exists(DATA_FOLDER):
-            st.write(f"**Contents of {DATA_FOLDER}:**")
-            folder_contents = os.listdir(DATA_FOLDER)
-            for item in folder_contents:
-                item_path = os.path.join(DATA_FOLDER, item)
-                if os.path.isfile(item_path):
-                    file_size = os.path.getsize(item_path)
-                    st.code(f"{item} (File, {file_size} bytes)")
-                else:
-                    st.code(f"{item} (Directory)")
-        else:
-            st.warning(f"Data folder does not exist: {DATA_FOLDER}")
-    except Exception as e:
-        st.error(f"Error listing directory: {str(e)}")
-    
-    # Environment variables
-    st.write("### Environment Variables")
-    # Filter to only show relevant variables, avoiding sensitive info
-    env_vars = dict(os.environ)
-    safe_vars = {k: v for k, v in env_vars.items() 
-                if k.startswith(('ST_', 'PYTHON', 'DATA_', 'PATH', 'RENDER', 'PORT'))}
-    # Add a special note for missing DATA_DIR
-    if is_render and 'DATA_DIR' not in env_vars:
-        st.error("DATA_DIR environment variable is not set!")
-    st.json(safe_vars)
-    
-    # System info
-    st.write("### System Information")
-    import platform
-    system_info = {
-        "Python Version": platform.python_version(),
-        "Platform": platform.platform(),
-        "System": platform.system(),
-        "Processor": platform.processor(),
-        "Machine": platform.machine(),
-        "Working Directory": os.getcwd()
-    }
-    st.json(system_info)
-    
-    # Show first 10 lines of the CSV if it exists
-    if os.path.exists(TRACKER_FILE):
-        st.write("### CSV File Preview (First 10 lines)")
-        try:
-            with open(TRACKER_FILE, 'r') as f:
-                first_lines = [next(f) for _ in range(10) if f]
-            st.code(''.join(first_lines), language="csv")
-        except Exception as e:
-            st.error(f"Error reading file: {str(e)}")
-            
-    # Add a force refresh button
-    if st.button("Force Reload Data File"):
-        logger.info("Force reload button clicked")
-        load_data.clear()
-        st.experimental_rerun() 
+    else:
+        st.info("No recent activity data available.") 
